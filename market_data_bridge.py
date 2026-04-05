@@ -7,22 +7,6 @@ import random
 
 
 class MarketDataBridge:
-    """
-    Advanced MarketDataBridge (MT5-LIKE SIMULATOR)
-
-    FEATURES:
-    ---------
-    - Simulates broker tick stream (BID/ASK)
-    - Provides OHLC data (copy_rates)
-    - Provides tick history (copy_ticks)
-    - Supports streaming (like OnTick)
-    - Includes symbol, account, broker info
-    - Internal caching for performance
-
-    DESIGN:
-    -------
-    Built to mimic MetaTrader 5 Python API so EA can be portable.
-    """
 
     def __init__(self,
                  csv_file="candlestick_data.csv",
@@ -33,12 +17,12 @@ class MarketDataBridge:
                  default_volume=100):
 
         # =========================
-        # LOAD DATA (ONLY CSV HERE)
+        # LOAD CSV (ONLY HERE)
         # =========================
         self.candles = pd.read_csv(csv_file).reset_index(drop=True)
 
         # =========================
-        # CONFIGURATION
+        # CONFIG
         # =========================
         self.symbol = symbol
         self.timeframe_minutes = timeframe_minutes
@@ -47,7 +31,7 @@ class MarketDataBridge:
         self.default_volume = default_volume
 
         # =========================
-        # INTERNAL STATE
+        # CACHE
         # =========================
         self._ticks_cache = None
         self._current_tick_index = 0
@@ -56,48 +40,34 @@ class MarketDataBridge:
         # SYMBOL INFO
         # =========================
         self._symbol_info = {
-            "SYMBOL": symbol,
-            "POINT": 0.01,
-            "DIGITS": 2,
-            "CONTRACT_SIZE": 100000,
-            "TICK_VALUE": 10,
-            "MARGIN_REQ": 1000,
-            "SWAP_LONG": -0.5,
-            "SWAP_SHORT": -0.3,
-            "COMMISSION": 2
+            "name": symbol,
+            "point": 0.01,
+            "digits": 2,
+            "trade_contract_size": 100000
         }
 
         # =========================
         # ACCOUNT INFO
         # =========================
         self._account_info = {
-            "ACCOUNT_NUMBER": 123456,
-            "USER_ID": "EA_TEST_USER",
-            "BALANCE": 10000,
-            "EQUITY": 10000,
-            "FREE_MARGIN": 10000,
-            "LEVERAGE": 100,
-            "CURRENCY": "USD"
+            "login": 123456,
+            "balance": 10000,
+            "equity": 10000,
+            "margin_free": 10000,
+            "leverage": 100
         }
 
         # =========================
-        # TERMINAL / BROKER INFO
+        # TERMINAL INFO
         # =========================
         self._terminal_info = {
-            "BROKER_NAME": "MyBroker",
-            "SERVER_NAME": "DemoServer01"
+            "company": "MyBroker Ltd",
+            "name": "MT5-Demo",
+            "server": "DemoServer01"
         }
 
-        # =========================
-        # TIME HANDLING
-        # =========================
-        if "DATETIME" not in self.candles.columns:
-            self.start_time = datetime.now().replace(second=0, microsecond=0)
-        else:
-            self.start_time = None
-
     # =========================================================
-    # 🔥 CORE ENGINE (GENERATE TICKS ONCE)
+    # 🔥 CORE ENGINE
     # =========================================================
     def _generate_ticks(self):
 
@@ -116,16 +86,16 @@ class MarketDataBridge:
             base_spread = float(row.get("SPREAD", self.default_spread))
             volume = int(row.get("VOLUME", self.default_volume))
 
-            # --- Handle time safely ---
+            # --- TIME SAFE ---
             try:
-                if self.start_time:
-                    candle_time = self.start_time + timedelta(minutes=idx * self.timeframe_minutes)
-                else:
-                    candle_time = datetime.strptime(str(row["DATETIME"]), "%Y-%m-%d %H:%M:%S")
+                candle_time = datetime.strptime(
+                    str(row.get("DATETIME")),
+                    "%Y-%m-%d %H:%M:%S"
+                )
             except:
                 candle_time = datetime.now()
 
-            # --- Generate ticks ---
+            # --- GENERATE TICKS ---
             for t in range(self.ticks_per_candle):
 
                 progress = t / self.ticks_per_candle
@@ -140,36 +110,34 @@ class MarketDataBridge:
                 ask = price + spread / 2
 
                 tick_time = candle_time + timedelta(
-                    seconds=int((t / self.ticks_per_candle) * self.timeframe_minutes * 60)
+                    seconds=int(progress * self.timeframe_minutes * 60)
                 )
 
+                # 🔥 MT5 FORMAT
                 ticks.append({
-                    "time": tick_time,
+                    "time": int(tick_time.timestamp()),
+                    "time_msc": int(tick_time.timestamp() * 1000),
+
                     "bid": round(bid, 5),
                     "ask": round(ask, 5),
                     "last": round(price, 5),
-                    "volume": random.randint(1, volume),
 
-                    # reference OHLC
-                    "open": open_price,
-                    "high": high,
-                    "low": low,
-                    "close": close,
+                    "volume": random.randint(1, volume),
+                    "flags": 2  # simple simulation
+
                 })
 
         self._ticks_cache = ticks
         return ticks
 
     # =========================================================
-    # 🔥 MT5 STYLE FUNCTIONS
+    # 🔥 MT5 API STYLE
     # =========================================================
 
     def symbol_info_tick(self):
-        """Return current tick"""
         return self._generate_ticks()[self._current_tick_index]
 
     def next_tick(self):
-        """Move to next tick (OnTick simulation)"""
         ticks = self._generate_ticks()
 
         if self._current_tick_index < len(ticks) - 1:
@@ -178,28 +146,35 @@ class MarketDataBridge:
         return ticks[self._current_tick_index]
 
     def copy_rates(self, count=100):
-        """Return last N candles"""
         df = self.candles.tail(count)
 
         rates = []
 
-        for idx, row in df.iterrows():
+        for _, row in df.iterrows():
+
+            try:
+                t = int(datetime.strptime(
+                    str(row.get("DATETIME")),
+                    "%Y-%m-%d %H:%M:%S"
+                ).timestamp())
+            except:
+                t = int(datetime.now().timestamp())
+
             rates.append({
-                "time": row.get("DATETIME"),
+                "time": t,
                 "open": float(row.get("OPEN", 0)),
                 "high": float(row.get("HIGH", 0)),
                 "low": float(row.get("LOW", 0)),
                 "close": float(row.get("CLOSE", 0)),
                 "tick_volume": int(row.get("VOLUME", self.default_volume)),
-                "spread": float(row.get("SPREAD", self.default_spread))
+                "spread": int(float(row.get("SPREAD", self.default_spread)) * 10000),
+                "real_volume": 0
             })
 
         return rates
 
     def copy_ticks(self, count=100):
-        """Return last N ticks"""
-        ticks = self._generate_ticks()
-        return ticks[-count:]
+        return self._generate_ticks()[-count:]
 
     def symbol_info(self):
         return self._symbol_info
@@ -211,26 +186,20 @@ class MarketDataBridge:
         return self._terminal_info
 
     # =========================================================
-    # 🔥 CONTROL FUNCTIONS
+    # CONTROL
     # =========================================================
 
     def reset(self):
-        """Reset tick pointer (restart simulation)"""
         self._current_tick_index = 0
 
     def is_end(self):
-        """Check if tick stream finished"""
         return self._current_tick_index >= len(self._generate_ticks()) - 1
 
     # =========================================================
-    # 🔥 STREAMING (LIKE REAL MARKET)
+    # STREAM
     # =========================================================
 
     def stream_ticks(self, sleep_seconds=0.1):
-        """Generator for live-like streaming"""
-
-        ticks = self._generate_ticks()
-
-        for t in ticks:
+        for t in self._generate_ticks():
             yield t
             sleep(sleep_seconds)
