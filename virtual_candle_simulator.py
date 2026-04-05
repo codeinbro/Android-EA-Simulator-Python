@@ -12,7 +12,7 @@ def plot_candlestick_with_bid_ask(df):
     """
     Plot OHLC candlestick chart with last candle Bid/Ask lines.
     Bid (red) and Ask (green), no volume plot.
-    DataFrame must contain: DATETIME, OPEN, HIGH, LOW, CLOSE, SPREAD
+    DataFrame must contain: DATETIME, OPEN, HIGH, LOW, CLOSE, SPREADE
     """
     if df.empty:
         print("DataFrame is empty. Nothing to plot.")
