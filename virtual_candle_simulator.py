@@ -1,17 +1,18 @@
-# virtual_candle_simulator.py
-# Read candlestick CSV data and plot OHLC chart with volume
+# virtual_candle_simulator_bidask_android.py
+# Plot OHLC candlestick chart with Bid/Ask lines (red/green)
 
 import matplotlib
-matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'Agg' for non-GUI environments
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
 from mplfinance.original_flavor import candlestick_ohlc
 
-def plot_candlestick(df):
+def plot_candlestick_with_bid_ask(df):
     """
-    Plot OHLC candlestick chart from DataFrame.
-    DataFrame must contain: DATETIME, OPEN, HIGH, LOW, CLOSE, VOLUME, SPREAD
+    Plot OHLC candlestick chart with last candle Bid/Ask lines.
+    Bid (red) and Ask (green), no volume plot.
+    DataFrame must contain: DATETIME, OPEN, HIGH, LOW, CLOSE, SPREAD
     """
     if df.empty:
         print("DataFrame is empty. Nothing to plot.")
@@ -21,33 +22,32 @@ def plot_candlestick(df):
     df['DateTime'] = pd.to_datetime(df['DATETIME'])
     df = df.set_index('DateTime')
 
-    # Convert prices to numeric
-    df[['OPEN', 'HIGH', 'LOW', 'CLOSE']] = df[['OPEN', 'HIGH', 'LOW', 'CLOSE']].apply(pd.to_numeric)
-
-    # Convert datetime to float for candlestick plotting
+    # Ensure numeric
+    df[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'SPREAD']] = df[['OPEN','HIGH','LOW','CLOSE','SPREAD']].apply(pd.to_numeric)
     df['DateNum'] = mdates.date2num(df.index)
 
-    # Create figure and axes
-    fig, (ax_candle, ax_volume) = plt.subplots(2, 1, figsize=(12, 8), sharex=True,
-                                               gridspec_kw={'height_ratios': [3, 1]})
+    # Last candle prices
+    last_close = df['CLOSE'].iloc[-1]
+    last_spread = df['SPREAD'].iloc[-1]
+    bid_price = last_close - last_spread / 2
+    ask_price = last_close + last_spread / 2
 
-    # Plot candlesticks
-    candlestick_ohlc(ax_candle, df[['DateNum', 'OPEN', 'HIGH', 'LOW', 'CLOSE']].values,
-                     width=0.005, colorup='green', colordown='red')
+    fig, ax = plt.subplots(figsize=(12,6))
 
-    ax_candle.set_ylabel('Price')
-    ax_candle.set_title('Candlestick Chart')
-    ax_candle.grid(True)
+    # Plot candles
+    candlestick_ohlc(ax, df[['DateNum','OPEN','HIGH','LOW','CLOSE']].values, width=0.005, colorup='green', colordown='red')
+    ax.set_ylabel('Price')
+    ax.set_title('Candlestick Chart with Bid/Ask Lines (Android style)')
+    ax.grid(True)
 
-    # Plot volume
-    ax_volume.bar(df['DateNum'], df['VOLUME'], width=0.005, color='blue', alpha=0.4)
-    ax_volume.set_ylabel('Volume')
-    ax_volume.set_xlabel('Date and Time')
-    ax_volume.grid(True)
+    # Plot Bid/Ask horizontal lines
+    ax.axhline(bid_price, color='red', linestyle='--', label=f'Bid {bid_price:.2f}')
+    ax.axhline(ask_price, color='green', linestyle='--', label=f'Ask {ask_price:.2f}')
+    ax.legend(loc='upper left')
 
     # Format x-axis
-    ax_candle.xaxis.set_major_locator(mdates.AutoDateLocator())
-    ax_candle.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
     plt.xticks(rotation=45, ha='right')
 
     plt.tight_layout()
@@ -57,6 +57,6 @@ def plot_candlestick(df):
 if __name__ == "__main__":
     try:
         df = pd.read_csv("candlestick_data.csv")
-        plot_candlestick(df)
+        plot_candlestick_with_bid_ask(df)
     except FileNotFoundError:
         print("CSV file not found. Please run candle_generator.py first.")
