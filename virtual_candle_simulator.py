@@ -1,54 +1,50 @@
-# candle_simulator_last_price_spread.py
-# Display candlesticks from CSV with spread only at last price
-# Android / Pydroid friendly
+# virtual_candle_simulator.py
+# Read candlestick CSV data and plot OHLC chart
 
+import matplotlib
+matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'Agg' for non-GUI environments
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import pandas as pd
+from mplfinance.original_flavor import candlestick_ohlc
 
-# ========================
-# Configurable parameters
-# ========================
-input_file = 'generated_candles.csv'  # CSV dari candle generator
-margin = 15  # extra margin untuk sumbu harga
+def plot_candlestick(df):
+    """
+    Plot OHLC candlestick chart from DataFrame.
+    DataFrame must contain: DATE, TIME, OPEN, HIGH, LOW, CLOSE
+    """
+    if df.empty:
+        print("DataFrame is empty. Nothing to plot.")
+        return
 
-# ========================
-# Baca CSV
-# ========================
-df = pd.read_csv(input_file, parse_dates=['timestamp'])
-df.set_index('timestamp', inplace=True)
+    # Combine date and time
+    df['DateTime'] = pd.to_datetime(df['DATE'] + ' ' + df['TIME'])
+    df = df.set_index('DateTime')
 
-# ========================
-# Plot candlestick chart
-# ========================
-fig, ax = plt.subplots(figsize=(14,6))
-ax.set_ylim(df['low'].min()-margin, df['high'].max()+margin)
+    # Convert prices to numeric
+    df[['OPEN', 'HIGH', 'LOW', 'CLOSE']] = df[['OPEN', 'HIGH', 'LOW', 'CLOSE']].apply(pd.to_numeric)
 
-x_pos = list(range(len(df)))
+    # Convert datetime to float for candlestick plotting
+    df['DateNum'] = mdates.date2num(df.index)
 
-for i, (idx, row) in enumerate(df.iterrows()):
-    color = 'green' if row['close'] >= row['open'] else 'red'
-    
-    # High-Low line
-    ax.plot([x_pos[i], x_pos[i]], [row['low'], row['high']], color='black', linewidth=1)
-    
-    # Open-Close rectangle
-    rect_height = row['close'] - row['open']
-    bottom = row['open'] if rect_height >=0 else row['close']
-    ax.bar(x_pos[i], abs(rect_height), bottom=bottom, width=0.6, color=color, edgecolor='black')
+    fig, ax = plt.subplots(figsize=(12,6))
+    candlestick_ohlc(ax, df[['DateNum', 'OPEN', 'HIGH', 'LOW', 'CLOSE']].values,
+                     width=0.005, colorup='green', colordown='red')
 
-# Last price & spread
-last_price = df['close'].iloc[-1]
-last_spread = df['spread'].iloc[-1]
-ax.axhline(last_price, color='blue', linestyle='--', linewidth=1.5, label=f'Last Price: {last_price}')
-ax.axhline(last_price + last_spread, color='orange', linestyle='-', linewidth=1.5, label=f'Spread: {last_spread}')
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+    plt.xticks(rotation=45, ha='right')
+    plt.xlabel('Date and Time')
+    plt.ylabel('Price')
+    plt.title('Candlestick Chart')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
-# X-axis labels
-step = max(1, len(df)//10)
-ax.set_xticks(x_pos[::step])
-ax.set_xticklabels([ts.strftime('%Y-%m-%d %H:%M') for ts in df.index[::step]], rotation=45)
 
-ax.set_ylabel('Price')
-ax.set_title(f'Virtual Candle Simulator ({len(df)} candles) with Last Price Spread')
-ax.legend()
-plt.tight_layout()
-plt.show()
+if __name__ == "__main__":
+    try:
+        df = pd.read_csv("candlestick_data.csv")
+        plot_candlestick(df)
+    except FileNotFoundError:
+        print("CSV file not found. Please run candle_generator.py first.")
