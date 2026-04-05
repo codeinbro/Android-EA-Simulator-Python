@@ -1,74 +1,60 @@
-# candle_generator_to_csv.py
-# Generate realistic connected candles and save to CSV
-# Android / Pydroid friendly
+# candle_generator.py
+# Generate 25 random but realistic candlestick OHLC data and save to CSV
 
-import random
-import csv
+import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 
-# ========================
-# Configurable parameters
-# ========================
-num_candles = 50      # total candles
-price_start = 4000.0  # starting price
-price_variation = 10.0 # max change per candle
-volume_min = 100
-volume_max = 5000
-spread_min = 0.5
-spread_max = 2.0
-timeframe = 'H1'      # H1 / H4 / D1
+def generate_random_candles(num_candles=25, start_price=120000.0, timeframe_minutes=15, max_body=3000.0, wick_ratio=0.3):
+    """
+    Generate random candlestick OHLC data with realistic rules.
 
-# Output CSV file
-output_file = 'generated_candles.csv'
+    Parameters:
+    - num_candles: total candles to generate (default 25)
+    - start_price: starting price for first candle (default 120000)
+    - timeframe_minutes: interval per candle in minutes (default 15)
+    - max_body: maximum body size (open-close) per candle (default 3000)
+    - wick_ratio: maximum wick as fraction of body (default 0.3)
 
-# ========================
-# Timeframe to minutes
-# ========================
-timeframe_map = {'H1':60, 'H4':240, 'D1':1440}
-interval_minutes = timeframe_map.get(timeframe.upper(), 60)
+    Returns:
+    - pd.DataFrame with columns: DATE, TIME, OPEN, HIGH, LOW, CLOSE
+    """
+    data = []
+    prev_close = start_price
+    current_datetime = datetime.now()
 
-# ========================
-# Generate candles
-# ========================
-candles = []
-prev_close = price_start
-trend = 0
-start_time = datetime.now()
+    for _ in range(num_candles):
+        # Random body
+        close_price = prev_close + np.random.uniform(-max_body, max_body)
+        open_price = prev_close
 
-for i in range(num_candles):
-    # Small trend to avoid random jumps
-    trend += random.uniform(-price_variation/4, price_variation/4)
-    
-    o = round(prev_close + trend, 2)
-    h = round(max(o, o + random.uniform(0, price_variation/2)), 2)
-    l = round(min(o, o - random.uniform(0, price_variation/2)), 2)
-    c = round(random.uniform(l, h), 2)
-    
-    v = random.randint(volume_min, volume_max)
-    s = round(random.uniform(spread_min, min(spread_max, price_variation/5)), 2)
-    
-    timestamp = start_time + timedelta(minutes=i*interval_minutes)
-    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
-    
-    candles.append({
-        'timestamp': timestamp_str,
-        'open': o,
-        'high': h,
-        'low': l,
-        'close': c,
-        'volume': v,
-        'spread': s
-    })
-    
-    prev_close = c  # next candle open
+        body_range = abs(close_price - open_price)
+        # Random wicks proportional to body
+        high_wick = np.random.uniform(0, body_range * wick_ratio + 0.1)  # tiny offset for small candles
+        low_wick = np.random.uniform(0, body_range * wick_ratio + 0.1)
 
-# ========================
-# Save to CSV
-# ========================
-with open(output_file, 'w', newline='') as f:
-    fieldnames = ['timestamp','open','high','low','close','volume','spread']
-    writer = csv.DictWriter(f, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(candles)
+        high_price = max(open_price, close_price) + high_wick
+        low_price = min(open_price, close_price) - low_wick
 
-print(f"{num_candles} realistic candles generated and saved to {output_file}")
+        # Append candle
+        data.append({
+            "DATE": current_datetime.strftime("%Y-%m-%d"),
+            "TIME": current_datetime.strftime("%H:%M:%S"),
+            "OPEN": round(open_price, 2),
+            "HIGH": round(high_price, 2),
+            "LOW": round(low_price, 2),
+            "CLOSE": round(close_price, 2)
+        })
+
+        # Prepare for next candle
+        prev_close = close_price
+        current_datetime += timedelta(minutes=timeframe_minutes)
+
+    return pd.DataFrame(data)
+
+if __name__ == "__main__":
+    # Generate 25 realistic random candles
+    df = generate_random_candles()
+    df.to_csv("candlestick_data.csv", index=False)
+    print("25 random candlestick data saved to random_candles.csv")
+    print(df)
