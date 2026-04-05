@@ -1,12 +1,12 @@
 # final_candle_generator.py
-# Generate 25 realistic candlestick OHLC data for main reference
+# Generate 20 realistic candlestick OHLC data for main reference
 
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
 def generate_candles(
-    num_candles=25,
+    num_candles=20,             # default 20 candles
     start_price=4000.0,
     timeframe_minutes=15,
     base_volatility=0.005,      # average % change per candle
@@ -70,7 +70,7 @@ def generate_candles(
 
 
 if __name__ == "__main__":
-    df = generate_candles()
+    df = generate_candles()  # default 20 candle
     df.to_csv("candlestick_data.csv", index=False)
-    print("25 final realistic candlestick data saved to candlestick_data.csv")
+    print("🔥 Ultra realistic candles generated!")
     print(df)
