@@ -1,45 +1,78 @@
 # market_data_bridge.py
+
 import pandas as pd
 from time import sleep
+from datetime import datetime, timedelta
+import random
+
 
 class MarketDataBridge:
     """
-    MarketDataBridge simulates a broker feed for MT5-like EA testing.
-    It converts candlestick data from a generator into a full tick feed,
-    including bid/ask, spread, volume, symbol info, account info, and optional fields.
-    This allows testing EA strategies without a live broker connection.
+    Advanced MarketDataBridge (MT5-LIKE SIMULATOR)
+
+    FEATURES:
+    ---------
+    - Simulates broker tick stream (BID/ASK)
+    - Provides OHLC data (copy_rates)
+    - Provides tick history (copy_ticks)
+    - Supports streaming (like OnTick)
+    - Includes symbol, account, broker info
+    - Internal caching for performance
+
+    DESIGN:
+    -------
+    Built to mimic MetaTrader 5 Python API so EA can be portable.
     """
 
-    def __init__(self, candle_df, default_spread=0.0001, default_volume=100, timeframe_minutes=15):
-        """
-        Initialize the bridge with a DataFrame from the candle generator.
+    def __init__(self,
+                 csv_file="candlestick_data.csv",
+                 symbol="EURUSD",
+                 timeframe_minutes=15,
+                 ticks_per_candle=20,
+                 default_spread=0.0001,
+                 default_volume=100):
 
-        Parameters:
-        - candle_df: pd.DataFrame containing columns DATETIME, OPEN, HIGH, LOW, CLOSE, SPREAD, VOLUME
-        - default_spread: value to use if SPREAD is missing
-        - default_volume: value to use if VOLUME is missing
-        - timeframe_minutes: candle timeframe, used to generate DATETIME if missing
-        """
-        self.candles = candle_df.reset_index(drop=True)
-        self.index = 0
+        # =========================
+        # LOAD DATA (ONLY CSV HERE)
+        # =========================
+        self.candles = pd.read_csv(csv_file).reset_index(drop=True)
+
+        # =========================
+        # CONFIGURATION
+        # =========================
+        self.symbol = symbol
+        self.timeframe_minutes = timeframe_minutes
+        self.ticks_per_candle = ticks_per_candle
         self.default_spread = default_spread
         self.default_volume = default_volume
-        self.timeframe_minutes = timeframe_minutes
 
-        # Default symbol information (can be customized)
-        self.symbol_info = {
-            "POINT": 0.01,           # minimal price change
-            "DIGITS": 2,             # number of decimal places
-            "CONTRACT_SIZE": 100000, # standard lot size
-            "TICK_VALUE": 10,        # value per tick
-            "MARGIN_REQ": 1000,      # margin for 1 lot
-            "SWAP_LONG": -0.5,       # overnight swap long
-            "SWAP_SHORT": -0.3,      # overnight swap short
-            "COMMISSION": 2          # per trade commission
+        # =========================
+        # INTERNAL STATE
+        # =========================
+        self._ticks_cache = None
+        self._current_tick_index = 0
+
+        # =========================
+        # SYMBOL INFO
+        # =========================
+        self._symbol_info = {
+            "SYMBOL": symbol,
+            "POINT": 0.01,
+            "DIGITS": 2,
+            "CONTRACT_SIZE": 100000,
+            "TICK_VALUE": 10,
+            "MARGIN_REQ": 1000,
+            "SWAP_LONG": -0.5,
+            "SWAP_SHORT": -0.3,
+            "COMMISSION": 2
         }
 
-        # Default account information
-        self.account_info = {
+        # =========================
+        # ACCOUNT INFO
+        # =========================
+        self._account_info = {
+            "ACCOUNT_NUMBER": 123456,
+            "USER_ID": "EA_TEST_USER",
             "BALANCE": 10000,
             "EQUITY": 10000,
             "FREE_MARGIN": 10000,
@@ -47,90 +80,157 @@ class MarketDataBridge:
             "CURRENCY": "USD"
         }
 
-        # If DATETIME missing entirely, set start time for generated timestamps
-        if "DATETIME" not in self.candles.columns or self.candles["DATETIME"].isnull().all():
-            from datetime import datetime
+        # =========================
+        # TERMINAL / BROKER INFO
+        # =========================
+        self._terminal_info = {
+            "BROKER_NAME": "MyBroker",
+            "SERVER_NAME": "DemoServer01"
+        }
+
+        # =========================
+        # TIME HANDLING
+        # =========================
+        if "DATETIME" not in self.candles.columns:
             self.start_time = datetime.now().replace(second=0, microsecond=0)
         else:
             self.start_time = None
 
-    def get_next_tick(self, simulate_realtime=False, sleep_seconds=1):
-        """
-        Returns the next tick in MT5-like format.
+    # =========================================================
+    # 🔥 CORE ENGINE (GENERATE TICKS ONCE)
+    # =========================================================
+    def _generate_ticks(self):
 
-        Parameters:
-        - simulate_realtime: if True, delays tick generation by sleep_seconds to simulate real-time
-        - sleep_seconds: delay per tick in seconds
+        if self._ticks_cache is not None:
+            return self._ticks_cache
 
-        Returns:
-        - dict: a tick containing DATETIME, OHLC, BID, ASK, SPREAD, VOLUME,
-                SYMBOL_INFO, ACCOUNT_INFO, NEWS_EVENT, SESSION_INFO
-        - None: when no more ticks are available
-        """
+        ticks = []
 
-        if self.index >= len(self.candles):
-            # End of data
-            return None
+        for idx, row in self.candles.iterrows():
 
-        row = self.candles.iloc[self.index]
+            open_price = float(row.get("OPEN", 0))
+            close = float(row.get("CLOSE", open_price))
+            high = float(row.get("HIGH", max(open_price, close)))
+            low = float(row.get("LOW", min(open_price, close)))
 
-        # Handle missing or NaN values for OHLC, SPREAD, VOLUME, DATETIME
-        from datetime import timedelta, datetime
+            base_spread = float(row.get("SPREAD", self.default_spread))
+            volume = int(row.get("VOLUME", self.default_volume))
 
-        # Use CLOSE if available, else fallback to OPEN, else 0
-        close = row["CLOSE"] if not pd.isna(row.get("CLOSE", None)) else row.get("OPEN", 0)
-        open_price = row["OPEN"] if not pd.isna(row.get("OPEN", None)) else close
-        high = row["HIGH"] if not pd.isna(row.get("HIGH", None)) else max(open_price, close)
-        low = row["LOW"] if not pd.isna(row.get("LOW", None)) else min(open_price, close)
-        spread = row["SPREAD"] if not pd.isna(row.get("SPREAD", None)) else self.default_spread
-        volume = int(row["VOLUME"]) if not pd.isna(row.get("VOLUME", None)) else self.default_volume
+            # --- Handle time safely ---
+            try:
+                if self.start_time:
+                    candle_time = self.start_time + timedelta(minutes=idx * self.timeframe_minutes)
+                else:
+                    candle_time = datetime.strptime(str(row["DATETIME"]), "%Y-%m-%d %H:%M:%S")
+            except:
+                candle_time = datetime.now()
 
-        # Generate timestamp if missing
-        if self.start_time:
-            datetime_val = (self.start_time + timedelta(minutes=self.index * self.timeframe_minutes)).strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            datetime_val = row["DATETIME"] if not pd.isna(row.get("DATETIME", None)) else "1970-01-01 00:00:00"
+            # --- Generate ticks ---
+            for t in range(self.ticks_per_candle):
 
-        # Calculate BID and ASK from CLOSE ± half spread
-        bid = close - (spread / 2)
-        ask = close + (spread / 2)
+                progress = t / self.ticks_per_candle
+                base_price = open_price + (close - open_price) * progress
 
-        tick = {
-            "DATETIME": datetime_val,
-            "OPEN": open_price,
-            "HIGH": high,
-            "LOW": low,
-            "CLOSE": close,
-            "BID": round(bid, 5),
-            "ASK": round(ask, 5),
-            "SPREAD": round(spread, 5),
-            "VOLUME": volume,
-            "SYMBOL_INFO": self.symbol_info,     # static symbol info
-            "ACCOUNT_INFO": self.account_info,   # static account info
-            "NEWS_EVENT": None,                  # optional
-            "SESSION_INFO": "London"             # optional, can be dynamic
-        }
+                noise = random.uniform(-0.3, 0.3)
+                price = max(min(base_price + noise, high), low)
 
-        self.index += 1
+                spread = base_spread * random.uniform(0.8, 1.5)
 
-        # Simulate real-time tick if requested
-        if simulate_realtime:
+                bid = price - spread / 2
+                ask = price + spread / 2
+
+                tick_time = candle_time + timedelta(
+                    seconds=int((t / self.ticks_per_candle) * self.timeframe_minutes * 60)
+                )
+
+                ticks.append({
+                    "time": tick_time,
+                    "bid": round(bid, 5),
+                    "ask": round(ask, 5),
+                    "last": round(price, 5),
+                    "volume": random.randint(1, volume),
+
+                    # reference OHLC
+                    "open": open_price,
+                    "high": high,
+                    "low": low,
+                    "close": close,
+                })
+
+        self._ticks_cache = ticks
+        return ticks
+
+    # =========================================================
+    # 🔥 MT5 STYLE FUNCTIONS
+    # =========================================================
+
+    def symbol_info_tick(self):
+        """Return current tick"""
+        return self._generate_ticks()[self._current_tick_index]
+
+    def next_tick(self):
+        """Move to next tick (OnTick simulation)"""
+        ticks = self._generate_ticks()
+
+        if self._current_tick_index < len(ticks) - 1:
+            self._current_tick_index += 1
+
+        return ticks[self._current_tick_index]
+
+    def copy_rates(self, count=100):
+        """Return last N candles"""
+        df = self.candles.tail(count)
+
+        rates = []
+
+        for idx, row in df.iterrows():
+            rates.append({
+                "time": row.get("DATETIME"),
+                "open": float(row.get("OPEN", 0)),
+                "high": float(row.get("HIGH", 0)),
+                "low": float(row.get("LOW", 0)),
+                "close": float(row.get("CLOSE", 0)),
+                "tick_volume": int(row.get("VOLUME", self.default_volume)),
+                "spread": float(row.get("SPREAD", self.default_spread))
+            })
+
+        return rates
+
+    def copy_ticks(self, count=100):
+        """Return last N ticks"""
+        ticks = self._generate_ticks()
+        return ticks[-count:]
+
+    def symbol_info(self):
+        return self._symbol_info
+
+    def account_info(self):
+        return self._account_info
+
+    def terminal_info(self):
+        return self._terminal_info
+
+    # =========================================================
+    # 🔥 CONTROL FUNCTIONS
+    # =========================================================
+
+    def reset(self):
+        """Reset tick pointer (restart simulation)"""
+        self._current_tick_index = 0
+
+    def is_end(self):
+        """Check if tick stream finished"""
+        return self._current_tick_index >= len(self._generate_ticks()) - 1
+
+    # =========================================================
+    # 🔥 STREAMING (LIKE REAL MARKET)
+    # =========================================================
+
+    def stream_ticks(self, sleep_seconds=0.1):
+        """Generator for live-like streaming"""
+
+        ticks = self._generate_ticks()
+
+        for t in ticks:
+            yield t
             sleep(sleep_seconds)
-
-        return tick
-
-
-# Example usage
-if __name__ == "__main__":
-    # Load candlestick CSV generated from final_candle_generator.py
-    df = pd.read_csv("candlestick_data.csv")
-
-    # Initialize the MarketDataBridge with DataFrame
-    bridge = MarketDataBridge(df)
-
-    # Generate and print ticks until the end
-    while True:
-        tick = bridge.get_next_tick(simulate_realtime=True, sleep_seconds=0.5)
-        if tick is None:
-            break
-        print(tick)
