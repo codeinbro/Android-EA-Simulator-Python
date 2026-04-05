@@ -1,9 +1,6 @@
-# candle_generator.py
-# Generate realistic random candles with OHLC + Volume + Spread + Timestamp
-# Open of next candle = Close of previous candle
-# Output CSV default: generated_candles.csv
+# candle_generator_to_csv.py
+# Generate realistic connected candles and save to CSV
 # Android / Pydroid friendly
-# Comments in English
 
 import random
 import csv
@@ -12,44 +9,47 @@ from datetime import datetime, timedelta
 # ========================
 # Configurable parameters
 # ========================
-num_candles = 20           # number of candles to generate
-price_start = 150          # starting price for first candle
-price_variation = 5        # max price change per candle
-volume_min = 100           # minimum volume
-volume_max = 5000          # maximum volume
-spread_min = 0.5           # minimum spread
-spread_max = 2.0           # maximum spread
-interval_minutes = 1       # interval between candles in minutes
+num_candles = 50      # total candles
+price_start = 4000.0  # starting price
+price_variation = 10.0 # max change per candle
+volume_min = 100
+volume_max = 5000
+spread_min = 0.5
+spread_max = 2.0
+timeframe = 'H1'      # H1 / H4 / D1
 
 # Output CSV file
 output_file = 'generated_candles.csv'
 
 # ========================
-# Start timestamp
+# Timeframe to minutes
 # ========================
-start_time = datetime.now()  # starting time for the first candle
+timeframe_map = {'H1':60, 'H4':240, 'D1':1440}
+interval_minutes = timeframe_map.get(timeframe.upper(), 60)
 
 # ========================
 # Generate candles
 # ========================
 candles = []
 prev_close = price_start
+trend = 0
+start_time = datetime.now()
 
 for i in range(num_candles):
-    # Open = previous candle close
-    o = prev_close
-    # High and Low within variation from Open
-    h = round(o + random.uniform(0, price_variation), 2)
-    l = round(o - random.uniform(0, price_variation), 2)
-    # Close somewhere between Low and High
+    # Small trend to avoid random jumps
+    trend += random.uniform(-price_variation/4, price_variation/4)
+    
+    o = round(prev_close + trend, 2)
+    h = round(max(o, o + random.uniform(0, price_variation/2)), 2)
+    l = round(min(o, o - random.uniform(0, price_variation/2)), 2)
     c = round(random.uniform(l, h), 2)
-    # Volume and spread
+    
     v = random.randint(volume_min, volume_max)
-    s = round(random.uniform(spread_min, spread_max), 2)
-    # Timestamp
+    s = round(random.uniform(spread_min, min(spread_max, price_variation/5)), 2)
+    
     timestamp = start_time + timedelta(minutes=i*interval_minutes)
     timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
-
+    
     candles.append({
         'timestamp': timestamp_str,
         'open': o,
@@ -59,8 +59,8 @@ for i in range(num_candles):
         'volume': v,
         'spread': s
     })
-
-    prev_close = c  # set close as next open
+    
+    prev_close = c  # next candle open
 
 # ========================
 # Save to CSV
@@ -71,4 +71,4 @@ with open(output_file, 'w', newline='') as f:
     writer.writeheader()
     writer.writerows(candles)
 
-print(f"{num_candles} connected candles created and saved to {output_file}")
+print(f"{num_candles} realistic candles generated and saved to {output_file}")
