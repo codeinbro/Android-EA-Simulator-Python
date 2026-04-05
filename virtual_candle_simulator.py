@@ -1,5 +1,5 @@
-# virtual_candle_simulator_bidask_android.py
-# Plot OHLC candlestick chart with Bid/Ask lines (red/green)
+# virtual_candle_simulator.py
+# Plot OHLC candlestick chart with Bid/Ask lines (Android style)
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -11,7 +11,7 @@ from mplfinance.original_flavor import candlestick_ohlc
 def plot_candlestick_with_bid_ask(df):
     """
     Plot OHLC candlestick chart with last candle Bid/Ask lines.
-    Bid (red) and Ask (green), no volume plot.
+    Bid (green) at last close, Ask (red) above by spread.
     DataFrame must contain: DATETIME, OPEN, HIGH, LOW, CLOSE, SPREAD
     """
     if df.empty:
@@ -29,20 +29,28 @@ def plot_candlestick_with_bid_ask(df):
     # Last candle prices
     last_close = df['CLOSE'].iloc[-1]
     last_spread = df['SPREAD'].iloc[-1]
-    bid_price = last_close - last_spread / 2
-    ask_price = last_close + last_spread / 2
+
+    bid_price = last_close                  # Bid tepat di close
+    ask_price = last_close + last_spread    # Ask di atas close
 
     fig, ax = plt.subplots(figsize=(12,6))
 
-    # Plot candles
-    candlestick_ohlc(ax, df[['DateNum','OPEN','HIGH','LOW','CLOSE']].values, width=0.005, colorup='green', colordown='red')
+    # Plot candlesticks
+    candlestick_ohlc(
+        ax,
+        df[['DateNum','OPEN','HIGH','LOW','CLOSE']].values,
+        width=0.005,
+        colorup='green',   # bullish candle
+        colordown='red'    # bearish candle
+    )
+
+    # Plot Bid/Ask horizontal lines
+    ax.axhline(ask_price, color='red', linestyle='--', linewidth=1.5, label=f'Ask {ask_price:.2f}')
+    ax.axhline(bid_price, color='green', linestyle='--', linewidth=1.5, label=f'Bid {bid_price:.2f}')
+
     ax.set_ylabel('Price')
     ax.set_title('Candlestick Chart with Bid/Ask Lines (Android style)')
     ax.grid(True)
-
-    # Plot Bid/Ask horizontal lines
-    ax.axhline(bid_price, color='red', linestyle='--', label=f'Bid {bid_price:.2f}')
-    ax.axhline(ask_price, color='green', linestyle='--', label=f'Ask {ask_price:.2f}')
     ax.legend(loc='upper left')
 
     # Format x-axis
